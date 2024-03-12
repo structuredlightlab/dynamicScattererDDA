@@ -1,0 +1,159 @@
+if do_phase_conjugation
+    tic
+    if n_sources ~= n_detectors
+        disp(['Number of sources and detectors must be equal for ' ...
+            'phase conjugation.'])
+        disp('Creating new detector number and locations for this section.')
+        n_detectors_pc = n_sources;                                % no. of outputs/detectors
+
+        x_detectors_pc = -x_start*ones(n_detectors_pc,1);             % x-positions of outputs
+        y_detectors_pc = linspace(x_start, -x_start, n_detectors_pc)';% y-positions of outputs
+        z_detectors_pc = x_detectors_pc + 1i*y_detectors_pc;             % [x y] positions of sources
+    else
+        n_detectors_pc = n_detectors;
+        x_detectors_pc = x_detectors;
+        y_detectors_pc = y_detectors;
+        z_detectors_pc = z_detectors;
+    end  
+    
+        n_foci = length(focus_location);
+
+    phase_conj_input_field = complex(zeros(n_detectors_pc,n_foci));      
+    desired_foci = complex(zeros(n_detectors_pc,n_foci));    
+    phase_conjugated_fields = complex(zeros(n_points_1D,n_points_1D,n_foci));
+    k = 0;      
+    for f = focus_location
+        k = k + 1;
+        desired_field_amp = Gaussian1D(y_detectors_pc,f,0.05*abs(min(y_detectors_pc)-max(y_detectors_pc)),1,0);
+        desired_field_phase = zeros(n_detectors_pc,1);
+        desired_field = desired_field_amp.*exp(1i*desired_field_phase);
+        desired_field = desired_field./norm(desired_field);
+        desired_foci(:,k) = desired_field;
+
+        source_backwards = sourceAtDetectors(k0,desired_field,z_detectors_pc,z_sources); 
+
+        [field_backwards, ~] = DDA_true2D_onlyOutputs(k0,alpha,...           
+                z_sources,z_detectors_pc,desired_field,source_backwards,...
+                z_dipole_positions);
+    
+        conj_field = conj(field_backwards);
+        conj_field = conj_field./norm(conj_field);
+        phase_conj_input_field(:,k) = conj_field;
+
+        source_forwards = sourceAtDetectors(k0,conj_field,z_sources,z_detectors_pc);
+
+        [field_forward, ~] = DDA_true2D_onlyOutputs(k0,alpha,...        % DDA function that calculates [total, scattered] field only at outputs
+                z_detectors_pc,z_sources,conj_field,source_forwards,...
+                z_dipole_positions);
+    
+        [phase_conjugated_field,~,~,~] = DDA_true2D(k0,alpha,...
+            z_full_2d,exclusion_radius,z_sources,conj_field,...
+            z_dipole_positions,show_pol_plots);
+        phase_conjugated_fields(:,:,k) = phase_conjugated_field;
+        
+    end
+
+    fig = figure('Units','centimeters','Position',[10 10 15 15]);
+    ha = tight_subplot(1,6,.1,.15,.15);
+    
+    subplot_x = 0.05;      subplot_y = 0.15;
+    subplot_width = 0.2;   subplot_height = subplot_width;
+    subplot_buffer = 0.0375;
+
+    axes(ha(1));    hold on;    box on;
+    imagesc(x_points./wavelength,x_points./wavelength,...
+        (abs(phase_conjugated_fields(:,:,1)).^2)...
+        ./max(max(abs(phase_conjugated_fields(:,:,1)).^2)));
+    plot(real(z_dipole_positions)/(wavelength),...
+        imag(z_dipole_positions)/(wavelength),'LineStyle','none',...
+        'Marker','.','MarkerSize',7,'Color',col6)
+    plot(real(moving_dipole_positions)/(wavelength),...
+        imag(moving_dipole_positions)/(wavelength),'LineStyle','none',...
+        'Marker','o','MarkerSize',7,'Color',col6)
+    axis image;     xlabel('x, \lambda');   ylabel('y, \lambda');
+    c = colorbar('northoutside');       c.Label.String = 'Normalised intensity';   
+    c.Label.FontSize = get(groot,'defaultaxesfontsize');
+    set(ha(1),'Position',[subplot_x subplot_y subplot_width subplot_height],...
+        'Color', 'w','YDir','reverse','YTick',get(ha(1),'XTick'));
+    % clim([0 1])
+
+    axes(ha(2));    hold on;    box on;
+    plot(((abs(phase_conjugated_fields(:,end,1))).^2)./max(max(abs(phase_conjugated_fields(:,end,1)).^2)),...
+        x_points,'Color',col1,'DisplayName','Int. at det.');
+    plot(((abs(desired_foci(:,1))).^2)./max(max((abs(desired_foci(:,1))).^2)),y_detectors_pc,'Color',col7,...
+        'DisplayName','Desired int.','LineStyle',':','LineWidth',1.5);
+    set(ha(2),'Position',[subplot_x+subplot_width+0.25*subplot_buffer subplot_y ...
+        0.4*subplot_width subplot_height],...
+        'YDir','reverse','XAxisLocation','top','YTick',[]);
+    axis([0 1 x_start -x_start])
+
+    axes(ha(3));    hold on;    box on;
+    imagesc(x_points./wavelength,x_points./wavelength,...
+        (abs(phase_conjugated_fields(:,:,2)).^2)...
+        ./max(max(abs(phase_conjugated_fields(:,:,2)).^2)));
+    plot(real(z_dipole_positions)/(wavelength),...
+        imag(z_dipole_positions)/(wavelength),'LineStyle','none',...
+        'Marker','.','MarkerSize',7,'Color',col6)
+    plot(real(moving_dipole_positions)/(wavelength),...
+        imag(moving_dipole_positions)/(wavelength),'LineStyle','none',...
+        'Marker','o','MarkerSize',7,'Color',col6)
+    axis image;     xlabel('x, \lambda');   
+    set(ha(3),'Position',[subplot_x+1.4*subplot_width+1.25*subplot_buffer...
+        subplot_y subplot_width subplot_height],...
+        'Color', 'w','YDir','reverse','YTick',get(ha(3),'XTick'));
+    % clim([0 1])
+
+    axes(ha(4));    hold on;    box on;
+    plot((abs(phase_conjugated_fields(:,end,2)).^2)...
+        ./max(max(abs(phase_conjugated_fields(:,end,2)).^2)),...
+        x_points,'Color',col1,'DisplayName','Int. at det.');
+    plot((abs(desired_foci(:,2)).^2)./max(abs(desired_foci(:,2)).^2),...
+        y_detectors_pc,'Color',col7,'DisplayName','Desired int.','LineStyle',':','LineWidth',1.5);
+    set(ha(4),'Position',[subplot_x+2.4*subplot_width+1.5*subplot_buffer subplot_y ...
+        0.4*subplot_width subplot_height],...
+        'YDir','reverse','XAxisLocation','top','YTick',[]);
+    axis([0 1 x_start -x_start])
+
+    axes(ha(5));    hold on;    box on;
+    imagesc(x_points./wavelength,x_points./wavelength,...
+        (abs(phase_conjugated_fields(:,:,3)).^2)...
+        ./max(max(abs(phase_conjugated_fields(:,:,3)).^2)));
+    p0 = plot(real(z_dipole_positions)/(wavelength),...
+        imag(z_dipole_positions)/(wavelength),'LineStyle','none',...
+        'Marker','.','MarkerSize',7,'Color',col6,...
+        'DisplayName',['Dipoles (' num2str(n_dipoles) ')']);
+    plot(real(moving_dipole_positions)/(wavelength),...
+        imag(moving_dipole_positions)/(wavelength),'LineStyle','none',...
+        'Marker','o','MarkerSize',7,'Color',col6)
+    axis image;     xlabel('x, \lambda');   
+    set(ha(5),'Position',[subplot_x+2.8*subplot_width+2.5*subplot_buffer subplot_y ...
+        subplot_width subplot_height],...
+        'Color', 'w','YDir','reverse','YTick',get(ha(5),'XTick'));
+    % clim([0 1])
+
+    axes(ha(6));    hold on;    box on;
+    p1 = plot((abs(phase_conjugated_fields(:,end,3)).^2)...
+        ./max(max(abs(phase_conjugated_fields(:,end,3)).^2)),...
+        x_points,'Color',col1,'DisplayName','Int. at det.');
+    p2 = plot((abs(desired_foci(:,3)).^2)./max(abs(desired_foci(:,3)).^2),...
+        y_detectors_pc,'Color',col7,'DisplayName','Desired int.','LineStyle',':','LineWidth',1.5);
+    set(ha(6),'Position',[subplot_x+3.8*subplot_width+2.75*subplot_buffer subplot_y ...
+        0.4*subplot_width subplot_height],...
+        'YDir','reverse','XAxisLocation','top','YTick',[]);
+   axis([0 1 x_start -x_start])
+ 
+    % legend('Location','southoutside','Position',[subplot_x+4*subplot_width+1*subplot_buffer ...
+    %     subplot_y+subplot_height+1.5*subplot_buffer 0.4*subplot_width 0.075*subplot_height])
+   legend([p0 p1 p2],'Location','southoutside','Position',[subplot_x+3.8*subplot_width+1.25*subplot_buffer ...
+        subplot_y+subplot_height+1.0*subplot_buffer 0.5*subplot_width 0.3*subplot_height])
+   
+
+    % set(c,'Position',[subplot_x subplot_y+1.0*subplot_height+1.0*subplot_buffer...
+    %     0.775 0.075*subplot_height]);
+    set(c,'Position',[subplot_x subplot_y+subplot_height+1.0*subplot_buffer...
+        0.74 0.1*subplot_height]);
+
+    
+
+    disp(['Phase conjugation took ' num2str(toc) ' seconds.']);
+end
